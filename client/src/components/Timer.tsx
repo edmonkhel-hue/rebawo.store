@@ -1,10 +1,13 @@
 import { useState, useEffect, useRef } from 'react';
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Moon, Sun } from "lucide-react";
+import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
+import { Moon, Sun, Settings } from "lucide-react";
 import TimerDisplay from './TimerDisplay';
 import TimeInput from './TimeInput';
 import TimerControls from './TimerControls';
+import AudioSettings from './AudioSettings';
+import { AudioManager, type SoundType } from '@/lib/audioManager';
 
 export default function Timer() {
   const [hours, setHours] = useState(0);
@@ -15,40 +18,35 @@ export default function Timer() {
   const [isRunning, setIsRunning] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
+  const [soundType, setSoundType] = useState<SoundType>('gentle');
+  const [volume, setVolume] = useState(0.5);
   const [isDark, setIsDark] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   
   const intervalRef = useRef<NodeJS.Timeout>();
-  const audioRef = useRef<HTMLAudioElement>();
+  const audioManagerRef = useRef<AudioManager>();
+  const notificationSentRef = useRef<boolean>(false);
 
-  // Initialize audio
+  // Initialize audio manager
   useEffect(() => {
-    // Create a simple beep sound using Web Audio API
-    const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-    
-    const createBeepSound = () => {
-      if (!audioContext) return;
-      
-      const oscillator = audioContext.createOscillator();
-      const gainNode = audioContext.createGain();
-      
-      oscillator.connect(gainNode);
-      gainNode.connect(audioContext.destination);
-      
-      oscillator.frequency.setValueAtTime(800, audioContext.currentTime);
-      oscillator.type = 'sine';
-      
-      gainNode.gain.setValueAtTime(0, audioContext.currentTime);
-      gainNode.gain.linearRampToValueAtTime(0.3, audioContext.currentTime + 0.01);
-      gainNode.gain.linearRampToValueAtTime(0, audioContext.currentTime + 0.3);
-      
-      oscillator.start(audioContext.currentTime);
-      oscillator.stop(audioContext.currentTime + 0.3);
-    };
+    audioManagerRef.current = new AudioManager();
+    audioManagerRef.current.setVolume(volume);
+  }, []);
 
-    if (timeLeft === 0 && totalTime > 0 && soundEnabled) {
-      createBeepSound();
+  // Update volume when it changes
+  useEffect(() => {
+    if (audioManagerRef.current) {
+      audioManagerRef.current.setVolume(volume);
     }
-  }, [timeLeft, totalTime, soundEnabled]);
+  }, [volume]);
+
+  // Play notification when timer ends (one-shot)
+  useEffect(() => {
+    if (timeLeft === 0 && totalTime > 0 && soundEnabled && audioManagerRef.current && !notificationSentRef.current) {
+      audioManagerRef.current.playNotificationSound(soundType);
+      notificationSentRef.current = true;
+    }
+  }, [timeLeft, totalTime, soundEnabled, soundType]);
 
   // Dark mode toggle
   useEffect(() => {
@@ -75,13 +73,24 @@ export default function Timer() {
     }
   };
 
-  const handleStart = () => {
+  const handleStart = async () => {
     const total = calculateTotalSeconds();
     if (total === 0) return;
+
+    // Unlock audio context on user interaction
+    if (audioManagerRef.current) {
+      await audioManagerRef.current.ensureUnlocked();
+    }
+
+    // Clear any existing interval to prevent multiple intervals
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+    }
 
     if (!isPaused) {
       setTotalTime(total);
       setTimeLeft(total);
+      notificationSentRef.current = false; // Reset notification flag for new timer
     }
     
     setIsRunning(true);
@@ -116,10 +125,19 @@ export default function Timer() {
     const total = calculateTotalSeconds();
     setTimeLeft(total);
     setTotalTime(total);
+    notificationSentRef.current = false; // Reset notification flag
   };
 
   const handleToggleSound = () => {
     setSoundEnabled(!soundEnabled);
+  };
+
+  const handleSoundTypeChange = (newSoundType: SoundType) => {
+    setSoundType(newSoundType);
+  };
+
+  const handleVolumeChange = (newVolume: number) => {
+    setVolume(newVolume);
   };
 
   useEffect(() => {
@@ -142,14 +160,46 @@ export default function Timer() {
       {/* Header */}
       <header className="flex items-center justify-between p-6">
         <h1 className="text-2xl font-semibold text-foreground">Focus Timer</h1>
-        <Button
-          data-testid="button-theme-toggle"
-          variant="ghost" 
-          size="icon"
-          onClick={() => setIsDark(!isDark)}
-        >
-          {isDark ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
-        </Button>
+        <div className="flex items-center gap-2">
+          <Dialog open={showSettings} onOpenChange={setShowSettings}>
+            <DialogTrigger asChild>
+              <Button
+                data-testid="button-audio-settings"
+                variant="ghost"
+                size="icon"
+                onClick={async () => {
+                  // Unlock audio context when opening settings
+                  if (audioManagerRef.current) {
+                    await audioManagerRef.current.ensureUnlocked();
+                  }
+                }}
+              >
+                <Settings className="w-5 h-5" />
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-md">
+              {audioManagerRef.current && (
+                <AudioSettings
+                  soundType={soundType}
+                  volume={volume}
+                  soundEnabled={soundEnabled}
+                  onSoundTypeChange={handleSoundTypeChange}
+                  onVolumeChange={handleVolumeChange}
+                  onSoundEnabledChange={setSoundEnabled}
+                  audioManager={audioManagerRef.current}
+                />
+              )}
+            </DialogContent>
+          </Dialog>
+          <Button
+            data-testid="button-theme-toggle"
+            variant="ghost" 
+            size="icon"
+            onClick={() => setIsDark(!isDark)}
+          >
+            {isDark ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+          </Button>
+        </div>
       </header>
 
       {/* Main Content */}
