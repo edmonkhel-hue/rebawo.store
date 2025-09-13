@@ -8,8 +8,10 @@ import TimeInput from './TimeInput';
 import TimerControls from './TimerControls';
 import PresetButtons from './PresetButtons';
 import AudioSettings from './AudioSettings';
+import KeyboardShortcutsHelp from './KeyboardShortcutsHelp';
 import { AudioManager, type SoundType } from '@/lib/audioManager';
 import { TimerStorage, type TimerSettings, type TimerSession } from '@/lib/timerStorage';
+import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 
 export default function Timer() {
   const [hours, setHours] = useState(0);
@@ -247,6 +249,35 @@ export default function Timer() {
     }
   };
 
+  const handleToggleTimer = () => {
+    if (isRunning || isPaused) {
+      if (isRunning) {
+        handlePause();
+      } else {
+        handleStart();
+      }
+    } else if (calculateTotalSeconds() > 0) {
+      handleStart();
+    }
+  };
+
+  const handleToggleSettings = () => {
+    setShowSettings(!showSettings);
+  };
+
+  const handleCloseSettings = () => {
+    setShowSettings(false);
+  };
+
+  // Keyboard shortcuts
+  useKeyboardShortcuts({
+    onToggleTimer: handleToggleTimer,
+    onReset: handleReset,
+    onToggleSettings: handleToggleSettings,
+    onCloseSettings: handleCloseSettings,
+    disabled: false
+  });
+
   useEffect(() => {
     return () => {
       if (intervalRef.current) {
@@ -262,6 +293,7 @@ export default function Timer() {
       <header className="flex items-center justify-between p-6">
         <h1 className="text-2xl font-semibold text-foreground">Focus Timer</h1>
         <div className="flex items-center gap-2">
+          <KeyboardShortcutsHelp />
           <Dialog open={showSettings} onOpenChange={setShowSettings}>
             <DialogTrigger asChild>
               <Button
