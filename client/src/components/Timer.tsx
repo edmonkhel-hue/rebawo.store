@@ -9,6 +9,7 @@ import TimerControls from './TimerControls';
 import PresetButtons from './PresetButtons';
 import AudioSettings from './AudioSettings';
 import { AudioManager, type SoundType } from '@/lib/audioManager';
+import { TimerStorage, type TimerSettings, type TimerSession } from '@/lib/timerStorage';
 
 export default function Timer() {
   const [hours, setHours] = useState(0);
@@ -28,10 +29,63 @@ export default function Timer() {
   const audioManagerRef = useRef<AudioManager>();
   const notificationSentRef = useRef<boolean>(false);
 
-  // Initialize audio manager
+  // Initialize audio manager and load saved settings
   useEffect(() => {
     audioManagerRef.current = new AudioManager();
-    audioManagerRef.current.setVolume(volume);
+    
+    // Load saved settings
+    const savedSettings = TimerStorage.loadSettings();
+    if (savedSettings) {
+      setHours(savedSettings.hours);
+      setMinutes(savedSettings.minutes);
+      setSeconds(savedSettings.seconds);
+      setSoundEnabled(savedSettings.soundEnabled);
+      setSoundType(savedSettings.soundType);
+      setVolume(savedSettings.volume);
+      setIsDark(savedSettings.isDark);
+      
+      audioManagerRef.current.setVolume(savedSettings.volume);
+      
+      // Set initial timer display
+      const total = savedSettings.hours * 3600 + savedSettings.minutes * 60 + savedSettings.seconds;
+      setTimeLeft(total);
+      setTotalTime(total);
+    } else {
+      audioManagerRef.current.setVolume(volume);
+      // Set initial timer display with default values
+      const total = hours * 3600 + minutes * 60 + seconds;
+      setTimeLeft(total);
+      setTotalTime(total);
+    }
+
+    // Check for resumable session
+    const resumableSession = TimerStorage.getResumedSession();
+    if (resumableSession) {
+      setTimeLeft(resumableSession.timeLeft);
+      setTotalTime(resumableSession.totalTime);
+      setIsRunning(resumableSession.isRunning);
+      setIsPaused(resumableSession.isPaused);
+      
+      // If the session was completed while away, trigger completion
+      if (resumableSession.timeLeft === 0 && resumableSession.totalTime > 0) {
+        notificationSentRef.current = false; // Allow notification for completed session
+      }
+
+      // Resume timer if it was running
+      if (resumableSession.isRunning) {
+        intervalRef.current = setInterval(() => {
+          setTimeLeft((prev) => {
+            if (prev <= 1) {
+              setIsRunning(false);
+              setIsPaused(false);
+              TimerStorage.clearSession();
+              return 0;
+            }
+            return prev - 1;
+          });
+        }, 1000);
+      }
+    }
   }, []);
 
   // Update volume when it changes
@@ -57,6 +111,46 @@ export default function Timer() {
       document.documentElement.classList.remove('dark');
     }
   }, [isDark]);
+
+  // Save settings whenever they change
+  useEffect(() => {
+    const settings: TimerSettings = {
+      hours,
+      minutes,
+      seconds,
+      soundEnabled,
+      soundType,
+      volume,
+      isDark
+    };
+    TimerStorage.saveSettings(settings);
+  }, [hours, minutes, seconds, soundEnabled, soundType, volume, isDark]);
+
+  // Save session when timer state changes (optimized - not every second)
+  useEffect(() => {
+    if (isRunning && !isPaused) {
+      const session: TimerSession = {
+        timeLeft,
+        totalTime,
+        isRunning,
+        isPaused,
+        targetEndTime: Date.now() + (timeLeft * 1000)
+      };
+      TimerStorage.saveSession(session);
+    } else if (isPaused) {
+      const session: TimerSession = {
+        timeLeft,
+        totalTime,
+        isRunning: false,
+        isPaused: true,
+        targetEndTime: Date.now() + (timeLeft * 1000),
+        pausedAt: Date.now()
+      };
+      TimerStorage.saveSession(session);
+    } else if (!isRunning && !isPaused) {
+      TimerStorage.clearSession();
+    }
+  }, [isRunning, isPaused]); // Only save when state changes, not every second
 
   const calculateTotalSeconds = () => {
     return hours * 3600 + minutes * 60 + seconds;
@@ -161,12 +255,6 @@ export default function Timer() {
     };
   }, []);
 
-  // Initialize timeLeft on component mount
-  useEffect(() => {
-    const total = calculateTotalSeconds();
-    setTimeLeft(total);
-    setTotalTime(total);
-  }, []);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted/20 flex flex-col">
