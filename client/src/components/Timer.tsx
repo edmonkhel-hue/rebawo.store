@@ -26,10 +26,12 @@ export default function Timer() {
   const [volume, setVolume] = useState(0.5);
   const [isDark, setIsDark] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [isCompleted, setIsCompleted] = useState(false);
   
   const intervalRef = useRef<NodeJS.Timeout>();
   const audioManagerRef = useRef<AudioManager>();
   const notificationSentRef = useRef<boolean>(false);
+  const completionTimeoutRef = useRef<NodeJS.Timeout>();
 
   // Initialize audio manager and load saved settings
   useEffect(() => {
@@ -70,7 +72,10 @@ export default function Timer() {
       
       // If the session was completed while away, trigger completion
       if (resumableSession.timeLeft === 0 && resumableSession.totalTime > 0) {
+        setIsCompleted(true);
         notificationSentRef.current = false; // Allow notification for completed session
+        // Clear completion state after animation
+        completionTimeoutRef.current = setTimeout(() => setIsCompleted(false), 3000);
       }
 
       // Resume timer if it was running
@@ -198,6 +203,12 @@ export default function Timer() {
         if (prev <= 1) {
           setIsRunning(false);
           setIsPaused(false);
+          setIsCompleted(true);
+          // Clear completion state after animation with tracked timeout
+          if (completionTimeoutRef.current) {
+            clearTimeout(completionTimeoutRef.current);
+          }
+          completionTimeoutRef.current = setTimeout(() => setIsCompleted(false), 3000);
           return 0;
         }
         return prev - 1;
@@ -216,8 +227,12 @@ export default function Timer() {
   const handleReset = () => {
     setIsRunning(false);
     setIsPaused(false);
+    setIsCompleted(false);
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
+    }
+    if (completionTimeoutRef.current) {
+      clearTimeout(completionTimeoutRef.current);
     }
     const total = calculateTotalSeconds();
     setTimeLeft(total);
@@ -283,6 +298,9 @@ export default function Timer() {
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
       }
+      if (completionTimeoutRef.current) {
+        clearTimeout(completionTimeoutRef.current);
+      }
     };
   }, []);
 
@@ -344,6 +362,7 @@ export default function Timer() {
               timeLeft={timeLeft}
               totalTime={totalTime}
               isRunning={isRunning}
+              isCompleted={isCompleted}
             />
 
             {/* Preset Buttons */}
