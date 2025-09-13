@@ -6,6 +6,7 @@ import { Moon, Sun, Settings } from "lucide-react";
 import TimerDisplay from './TimerDisplay';
 import TimeInput from './TimeInput';
 import TimerControls from './TimerControls';
+import PresetButtons from './PresetButtons';
 import AudioSettings from './AudioSettings';
 import { AudioManager, type SoundType } from '@/lib/audioManager';
 
@@ -140,6 +141,18 @@ export default function Timer() {
     setVolume(newVolume);
   };
 
+  const handlePresetSelect = (h: number, m: number, s: number) => {
+    if (!isRunning) {
+      setHours(h);
+      setMinutes(m);
+      setSeconds(s);
+      
+      const total = h * 3600 + m * 60 + s;
+      setTimeLeft(total);
+      setTotalTime(total);
+    }
+  };
+
   useEffect(() => {
     return () => {
       if (intervalRef.current) {
@@ -211,6 +224,12 @@ export default function Timer() {
               timeLeft={timeLeft}
               totalTime={totalTime}
               isRunning={isRunning}
+            />
+
+            {/* Preset Buttons */}
+            <PresetButtons
+              onPresetSelect={handlePresetSelect}
+              disabled={isRunning && !isPaused}
             />
 
             {/* Time Input */}
